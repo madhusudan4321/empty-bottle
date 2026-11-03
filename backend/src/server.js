@@ -12,6 +12,7 @@ app.use(express.json());
 
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/reports", require("./routes/report.routes"));
 
 const PORT = process.env.PORT || 5000;
 
