@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/seed/seedWaterPoints.js",
-    "create-admin": "node src/seed/createAdmin.js"
+    "create-admin": "node src/seed/createAdmin.js",
+    "seed:all": "node src/seed/seedAll.js"
   },
   "keywords": [],
   "author": "",
