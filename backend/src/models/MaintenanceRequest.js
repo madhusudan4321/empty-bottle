@@ -7,7 +7,22 @@ const maintenanceRequestSchema = new mongoose.Schema(
       ref: "WaterPoint",
       required: true,
     },
-    issue: { type: String, required: true, trim: true },
+    // Same values as StatusReport.issueType
+    issue: {
+      type: String,
+      enum: [
+        "water_unavailable",
+        "water_warm",
+        "dirty",
+        "tap_damaged",
+        "leakage",
+        "cooler_not_working",
+        "other",
+      ],
+      required: true,
+    },
+    // Reports grouped into this request
+    reportIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "StatusReport" }],
     priority: {
       type: String,
       enum: ["low", "medium", "high", "critical"],
