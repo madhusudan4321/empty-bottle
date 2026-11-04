@@ -9,3 +9,4 @@ export const ISSUE_TYPE_LABELS = {
   cooler_not_working: "Cooler Not Working",
   other: "Other Issue",
 };
+
