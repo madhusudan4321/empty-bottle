@@ -56,3 +56,32 @@ export function formatDistance(meters) {
   }
   return `${(meters / 1000).toFixed(1)} km`;
 }
+
+/**
+ * Formats a date or timestamp into a friendly relative string (e.g., "5 min ago", "2 hours ago").
+ * @param {string|Date|number|null} dateInput
+ * @returns {string}
+ */
+export function formatRelativeTime(dateInput) {
+  if (!dateInput) return "Recently";
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return "Recently";
+
+  const diffInSeconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diffInSeconds < 0 || diffInSeconds < 60) {
+    return "Just now";
+  }
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) {
+    return `${diffInMinutes} min ago`;
+  }
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) {
+    return `${diffInHours} hour${diffInHours > 1 ? "s" : ""} ago`;
+  }
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 30) {
+    return `${diffInDays} day${diffInDays > 1 ? "s" : ""} ago`;
+  }
+  return date.toLocaleDateString();
+}

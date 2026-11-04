@@ -1,71 +1,98 @@
 "use client";
 
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import PageLayout from "@/components/ui/PageLayout";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/Card";
+import { Card, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
+import ErrorMessage from "@/components/ui/ErrorMessage";
+import EmptyState from "@/components/ui/EmptyState";
 import {
   AvailabilityBadge,
   CrowdBadge,
+  CleanlinessBadge,
   TemperatureBadge,
   StatusBadge,
 } from "@/components/ui/Badge";
-import {
-  MOCK_USER,
-  MOCK_WATER_POINTS,
-  MOCK_CROWD_DATA,
-  MOCK_REPORTS,
-  MOCK_USER_COORDINATES,
-} from "@/lib/mockData";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
+import { ISSUE_TYPE_LABELS } from "@/lib/constants";
 import {
   getDistanceInMeters,
   formatDistance,
+  formatRelativeTime,
 } from "../water-points/distance";
 
-export default function DashboardPage() {
-  const user = MOCK_USER;
-  const userCoords = MOCK_USER_COORDINATES;
+function DashboardContent({ userPosition = null }) {
+  const { user } = useAuth();
+  const [waterPoints, setWaterPoints] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Compute distances and sort water points closest to student
-  const sortedWaterPoints = [...MOCK_WATER_POINTS]
-    .map((wp) => {
-      const distance = getDistanceInMeters(
-        userCoords.latitude,
-        userCoords.longitude,
-        wp.latitude,
-        wp.longitude
-      );
-      return { ...wp, distance };
-    })
-    .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+  const fetchData = useCallback(async () => {
+    try {
+      const [wpData, repData] = await Promise.all([
+        apiFetch("/api/water-points"),
+        apiFetch("/api/reports/my"),
+      ]);
+      setWaterPoints(Array.isArray(wpData) ? wpData : []);
+      setReports(Array.isArray(repData) ? repData : []);
+    } catch (err) {
+      setError(err.message || "Failed to load dashboard data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const nearestWaterPoints = sortedWaterPoints.slice(0, 3);
-  const recentReports = MOCK_REPORTS.slice(0, 2);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchData();
+  };
+
+  // Points to display: when userPosition exists, sort nearest first; otherwise take first 3 available ones sorted by name
+  const displayPoints = useMemo(() => {
+    if (
+      userPosition &&
+      typeof userPosition.latitude === "number" &&
+      typeof userPosition.longitude === "number"
+    ) {
+      return [...waterPoints]
+        .map((wp) => ({
+          ...wp,
+          distance: getDistanceInMeters(
+            userPosition.latitude,
+            userPosition.longitude,
+            wp.latitude,
+            wp.longitude
+          ),
+        }))
+        .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+        .slice(0, 3);
+    }
+
+    // No user position: first 3 available ones (sorted by name), or first 3 overall if none available
+    const available = waterPoints.filter((wp) => wp.availability === "available");
+    const pool = available.length > 0 ? available : waterPoints;
+    return [...pool]
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      .slice(0, 3);
+  }, [waterPoints, userPosition]);
+
+  const recentReports = reports.slice(0, 2);
 
   return (
     <PageLayout
-      title={`Hi, ${user.name} 👋`}
+      title={`Hi, ${user?.name || "Student"} 👋`}
       subtitle="Find clean, cold drinking water points across campus and report outages."
     >
-      {/* Geolocation status note */}
-      <div className="mb-6 rounded-lg bg-blue-50 border border-blue-200 p-3.5 text-xs text-blue-800 flex items-center justify-between">
-        <span className="flex items-center gap-2">
-          <span>📍</span>
-          <span>
-            Using mock campus center coordinates (
-            {userCoords.latitude.toFixed(4)}, {userCoords.longitude.toFixed(4)}
-            ). Real-time browser GPS will activate once the Lead&apos;s geolocation
-            hook is merged.
-          </span>
-        </span>
-      </div>
-
       {/* Quick Action Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Link href="/water-points" className="block group">
@@ -79,8 +106,7 @@ export default function DashboardPage() {
                   Find Drinking Water
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">
-                  View all campus water dispensers sorted by proximity and live
-                  status.
+                  View all campus water dispensers and check live operational status.
                 </p>
               </div>
             </CardContent>
@@ -98,7 +124,7 @@ export default function DashboardPage() {
                   Report a Problem
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">
-                  Let staff know about empty dispensers, warm water, dirt, or leaks.
+                  Let facilities know about empty dispensers, warm water, dirt, or leaks.
                 </p>
               </div>
             </CardContent>
@@ -124,25 +150,54 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Nearest Water Points Summary */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900">
-              Nearest Water Points
-            </h2>
-            <Link
-              href="/water-points"
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800"
-            >
-              View all points &rarr;
-            </Link>
-          </div>
+      {/* Loading State */}
+      {loading && (
+        <div className="py-16 flex flex-col items-center justify-center">
+          <Spinner size="lg" />
+          <p className="mt-3 text-sm text-gray-500">Loading campus data...</p>
+        </div>
+      )}
 
-          <div className="space-y-3">
-            {nearestWaterPoints.map((wp) => {
-              const crowd = MOCK_CROWD_DATA[wp._id];
-              return (
+      {/* Error State */}
+      {!loading && error && (
+        <div className="mb-8">
+          <ErrorMessage
+            title="Failed to load dashboard data"
+            message={error}
+            onRetry={handleRetry}
+          />
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && !error && waterPoints.length === 0 && (
+        <div className="mb-8">
+          <EmptyState
+            title="No Water Points Found"
+            description="There are currently no drinking water points registered in the database."
+          />
+        </div>
+      )}
+
+      {/* Content grid when data loaded */}
+      {!loading && !error && waterPoints.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Water Points Summary */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">
+                {userPosition ? "Nearest Water Points" : "Water points"}
+              </h2>
+              <Link
+                href="/water-points"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+              >
+                View all points &rarr;
+              </Link>
+            </div>
+
+            <div className="space-y-3">
+              {displayPoints.map((wp) => (
                 <Card
                   key={wp._id}
                   className="hover:border-gray-300 transition-all"
@@ -155,11 +210,30 @@ export default function DashboardPage() {
                             {wp.name}
                           </h3>
                         </div>
+
+                        {(wp.building || wp.floor) && (
+                          <p className="text-xs text-gray-600 mt-0.5 font-medium">
+                            {wp.building}
+                            {wp.floor ? ` • Floor ${wp.floor}` : ""}
+                          </p>
+                        )}
+
                         <p className="text-xs text-gray-500 mt-1">
-                          Coordinates: {wp.latitude.toFixed(4)}, {wp.longitude.toFixed(4)} &bull;{" "}
-                          <span className="font-medium text-blue-700">
-                            {formatDistance(wp.distance)} away
-                          </span>
+                          Coordinates: {wp.latitude?.toFixed(4)},{" "}
+                          {wp.longitude?.toFixed(4)}
+                          {wp.distance != null && (
+                            <>
+                              {" "}
+                              &bull;{" "}
+                              <span className="font-medium text-blue-700">
+                                {formatDistance(wp.distance)} away
+                              </span>
+                            </>
+                          )}
+                        </p>
+
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Updated {formatRelativeTime(wp.lastUpdated)}
                         </p>
                       </div>
 
@@ -173,79 +247,98 @@ export default function DashboardPage() {
                     <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
                       <AvailabilityBadge availability={wp.availability} />
                       <TemperatureBadge temperature={wp.temperature} />
-                      {crowd && (
-                        <CrowdBadge
-                          level={crowd.level}
-                          percentage={crowd.percentage}
-                        />
-                      )}
+                      <CleanlinessBadge cleanliness={wp.cleanliness} />
+                      <CrowdBadge level={null} />
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Recent Reports / Campus Status */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900">Your Recent Reports</h2>
-            <Link
-              href="/reports"
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800"
-            >
-              See all
-            </Link>
-          </div>
-
-          {recentReports.length === 0 ? (
-            <Card>
-              <CardContent className="p-6 text-center text-xs text-gray-500">
-                No active issue reports. Everything looks clear!
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {recentReports.map((report) => (
-                <Card key={report._id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h4 className="text-sm font-semibold text-gray-900 capitalize">
-                          {report.issueType.replace(/_/g, " ")}
-                        </h4>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {report.waterPointId.name}
-                        </p>
-                      </div>
-                      <StatusBadge status={report.status} />
-                    </div>
-                    {report.description && (
-                      <p className="text-xs text-gray-600 mt-2 line-clamp-2 bg-gray-50 p-2 rounded">
-                        &ldquo;{report.description}&rdquo;
-                      </p>
-                    )}
                   </CardContent>
                 </Card>
               ))}
             </div>
-          )}
+          </div>
 
-          {/* Quick Notice about Privacy / Aggregated Presence */}
-          <Card className="bg-slate-50 border-slate-200">
-            <CardContent className="p-4">
-              <h4 className="text-xs font-semibold text-slate-800">
-                🔒 Privacy &amp; Crowd Estimation
-              </h4>
-              <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                Crowd levels are aggregate estimates calculated automatically. Your
-                exact location is never stored or displayed to other students.
-              </p>
-            </CardContent>
-          </Card>
+          {/* Recent Reports / Campus Status */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Your Recent Reports</h2>
+              <Link
+                href="/reports"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+              >
+                See all
+              </Link>
+            </div>
+
+            {recentReports.length === 0 ? (
+              <Card>
+                <CardContent className="p-6 text-center text-xs text-gray-500">
+                  No active issue reports. Everything looks clear!
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {recentReports.map((report) => {
+                  const wpName =
+                    typeof report.waterPointId === "object" &&
+                    report.waterPointId?.name
+                      ? report.waterPointId.name
+                      : "Campus Water Point";
+
+                  const issueLabel =
+                    ISSUE_TYPE_LABELS[report.issueType] ||
+                    (report.issueType || "").replace(/_/g, " ");
+
+                  return (
+                    <Card key={report._id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900 capitalize">
+                              {issueLabel}
+                            </h4>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {wpName}
+                            </p>
+                          </div>
+                          <StatusBadge status={report.status} />
+                        </div>
+                        {report.description && (
+                          <p className="text-xs text-gray-600 mt-2 line-clamp-2 bg-gray-50 p-2 rounded">
+                            &ldquo;{report.description}&rdquo;
+                          </p>
+                        )}
+                        <p className="text-[10px] text-gray-400 mt-2">
+                          Submitted {formatRelativeTime(report.createdAt)}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Notice about Privacy / Presence */}
+            <Card className="bg-slate-50 border-slate-200">
+              <CardContent className="p-4">
+                <h4 className="text-xs font-semibold text-slate-800">
+                  🔒 Privacy &amp; Crowd Estimation
+                </h4>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                  Crowd levels are aggregate estimates calculated automatically. Your
+                  exact location is never stored or displayed to other students.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+      )}
     </PageLayout>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <ProtectedRoute roles={["student"]}>
+      <DashboardContent />
+    </ProtectedRoute>
   );
 }

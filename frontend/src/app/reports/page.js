@@ -2,55 +2,56 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import PageLayout from "@/components/ui/PageLayout";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/Card";
+import { Card, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
 import ErrorMessage from "@/components/ui/ErrorMessage";
 import EmptyState from "@/components/ui/EmptyState";
 import { StatusBadge } from "@/components/ui/Badge";
-import { MOCK_REPORTS, ISSUE_TYPE_LABELS } from "@/lib/mockData";
-import { apiFetch, getToken } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { ISSUE_TYPE_LABELS } from "@/lib/constants";
+import { formatRelativeTime } from "../water-points/distance";
 
-export default function ReportsHistoryPage() {
+function ReportsHistoryContent() {
   const [reports, setReports] = useState([]);
+  const [waterPointsMap, setWaterPointsMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadReports = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchData = useCallback(async () => {
+    try {
+      // Fetch both reports and water points to ensure bulletproof name resolution
+      const [reportsData, waterPointsData] = await Promise.all([
+        apiFetch("/api/reports/my"),
+        apiFetch("/api/water-points").catch(() => []),
+      ]);
 
-    const token = getToken();
-
-    if (token) {
-      try {
-        const response = await apiFetch("/api/reports/my");
-        if (response && Array.isArray(response)) {
-          setReports(response);
-          setLoading(false);
-          return;
+      const map = {};
+      if (Array.isArray(waterPointsData)) {
+        for (const wp of waterPointsData) {
+          if (wp._id) map[wp._id] = wp.name;
         }
-      } catch (err) {
-        console.warn("Unable to fetch reports from backend, using mock data:", err.message);
       }
-    }
-
-    // Default to mock data
-    setTimeout(() => {
-      setReports([...MOCK_REPORTS]);
+      setWaterPointsMap(map);
+      setReports(Array.isArray(reportsData) ? reportsData : []);
+    } catch (err) {
+      setError(err.message || "Failed to load reports");
+    } finally {
       setLoading(false);
-    }, 300);
+    }
   }, []);
 
   useEffect(() => {
-    loadReports();
-  }, [loadReports]);
+    fetchData();
+  }, [fetchData]);
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchData();
+  };
 
   return (
     <PageLayout
@@ -78,7 +79,7 @@ export default function ReportsHistoryPage() {
           <ErrorMessage
             title="Unable to load reports"
             message={error}
-            onRetry={loadReports}
+            onRetry={handleRetry}
           />
         </div>
       )}
@@ -100,22 +101,29 @@ export default function ReportsHistoryPage() {
       {!loading && !error && reports.length > 0 && (
         <div className="space-y-4">
           {reports.map((report) => {
-            const waterPointName =
-              typeof report.waterPointId === "object" && report.waterPointId?.name
-                ? report.waterPointId.name
-                : "Campus Water Point";
+            let waterPointName = "Campus Water Point";
+            if (
+              typeof report.waterPointId === "object" &&
+              report.waterPointId?.name
+            ) {
+              waterPointName = report.waterPointId.name;
+            } else if (
+              typeof report.waterPointId === "string" &&
+              waterPointsMap[report.waterPointId]
+            ) {
+              waterPointName = waterPointsMap[report.waterPointId];
+            }
 
             const issueLabel =
               ISSUE_TYPE_LABELS[report.issueType] ||
-              report.issueType.replace(/_/g, " ");
+              (report.issueType || "").replace(/_/g, " ");
 
-            const formattedDate = new Date(report.createdAt).toLocaleString(
-              [],
-              {
-                dateStyle: "medium",
-                timeStyle: "short",
-              }
-            );
+            const formattedDate = report.createdAt
+              ? new Date(report.createdAt).toLocaleString([], {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })
+              : "Recently";
 
             return (
               <Card
@@ -138,14 +146,17 @@ export default function ReportsHistoryPage() {
                       </p>
 
                       <p className="text-[11px] text-gray-400">
-                        Submitted: {formattedDate} &bull; Report ID:{" "}
+                        Submitted: {formattedDate} ({formatRelativeTime(report.createdAt)}) &bull; Report ID:{" "}
                         <span className="font-mono">{report._id}</span>
                       </p>
                     </div>
 
                     <div className="self-start sm:self-center">
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-gray-100 text-gray-600">
-                        Status: <strong className="capitalize">{report.status.replace("_", " ")}</strong>
+                        Status:{" "}
+                        <strong className="capitalize">
+                          {(report.status || "open").replace(/_/g, " ")}
+                        </strong>
                       </span>
                     </div>
                   </div>
@@ -164,5 +175,13 @@ export default function ReportsHistoryPage() {
         </div>
       )}
     </PageLayout>
+  );
+}
+
+export default function ReportsHistoryPage() {
+  return (
+    <ProtectedRoute>
+      <ReportsHistoryContent />
+    </ProtectedRoute>
   );
 }

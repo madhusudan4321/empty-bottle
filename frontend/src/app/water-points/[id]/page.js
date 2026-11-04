@@ -1,7 +1,9 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import PageLayout from "@/components/ui/PageLayout";
 import {
   Card,
@@ -10,6 +12,8 @@ import {
   CardContent,
 } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
+import ErrorMessage from "@/components/ui/ErrorMessage";
 import EmptyState from "@/components/ui/EmptyState";
 import {
   AvailabilityBadge,
@@ -17,30 +21,95 @@ import {
   CleanlinessBadge,
   TemperatureBadge,
 } from "@/components/ui/Badge";
-import {
-  MOCK_WATER_POINTS,
-  MOCK_CROWD_DATA,
-  MOCK_USER_COORDINATES,
-} from "@/lib/mockData";
+import { apiFetch } from "@/lib/api";
 import {
   getDistanceInMeters,
   formatDistance,
+  formatRelativeTime,
 } from "../distance";
 
-export default function WaterPointDetailPage() {
+function WaterPointDetailContent({ userPosition = null }) {
   const params = useParams();
   const router = useRouter();
   const id = params?.id;
 
-  const waterPoint = MOCK_WATER_POINTS.find((wp) => wp._id === id);
-  const crowd = id ? MOCK_CROWD_DATA[id] : null;
+  const [waterPoint, setWaterPoint] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    if (!id) return;
+    try {
+      const data = await apiFetch(`/api/water-points/${id}`);
+      setWaterPoint(data);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchData();
+  };
+
+  if (loading) {
+    return (
+      <PageLayout title="Water Point Details">
+        <div className="py-16 flex flex-col items-center justify-center">
+          <Spinner size="lg" />
+          <p className="mt-3 text-sm text-gray-500">
+            Loading water point details...
+          </p>
+        </div>
+      </PageLayout>
+    );
+  }
+
+  if (error) {
+    const is404 =
+      error.status === 404 ||
+      (error.message && error.message.toLowerCase().includes("not found"));
+
+    if (is404) {
+      return (
+        <PageLayout title="Water Point Not Found">
+          <EmptyState
+            title="Water Point Not Found"
+            description={`No drinking water point exists with ID: "${id}". It may have been removed or relocated.`}
+            action={
+              <Button onClick={() => router.push("/water-points")}>
+                &larr; Back to Water Points
+              </Button>
+            }
+          />
+        </PageLayout>
+      );
+    }
+
+    return (
+      <PageLayout title="Water Point Details">
+        <ErrorMessage
+          title="Failed to load water point details"
+          message={error.message || "An unexpected error occurred."}
+          onRetry={handleRetry}
+        />
+      </PageLayout>
+    );
+  }
 
   if (!waterPoint) {
     return (
       <PageLayout title="Water Point Not Found">
         <EmptyState
           title="Water Point Not Found"
-          description={`No drinking water point exists with ID: "${id}". It may have been removed or relocated.`}
+          description={`No drinking water point exists with ID: "${id}".`}
           action={
             <Button onClick={() => router.push("/water-points")}>
               &larr; Back to Water Points
@@ -51,23 +120,35 @@ export default function WaterPointDetailPage() {
     );
   }
 
-  const userCoords = MOCK_USER_COORDINATES;
-  const distance = getDistanceInMeters(
-    userCoords.latitude,
-    userCoords.longitude,
-    waterPoint.latitude,
-    waterPoint.longitude
-  );
+  const distance =
+    userPosition &&
+    typeof userPosition.latitude === "number" &&
+    typeof userPosition.longitude === "number" &&
+    typeof waterPoint.latitude === "number" &&
+    typeof waterPoint.longitude === "number"
+      ? getDistanceInMeters(
+          userPosition.latitude,
+          userPosition.longitude,
+          waterPoint.latitude,
+          waterPoint.longitude
+        )
+      : null;
 
-  const formattedDate = new Date(waterPoint.lastUpdated).toLocaleString([], {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const formattedDate = waterPoint.lastUpdated
+    ? new Date(waterPoint.lastUpdated).toLocaleString([], {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : "Recently";
+
+  const subtitle = distance != null
+    ? `Campus Drinking Point Details • ${formatDistance(distance)} from your current location`
+    : "Campus Drinking Point Details";
 
   return (
     <PageLayout
       title={waterPoint.name}
-      subtitle={`Campus Drinking Point Details • ${formatDistance(distance)} from your current location`}
+      subtitle={subtitle}
       actions={
         <div className="flex items-center gap-2">
           <Button
@@ -93,6 +174,13 @@ export default function WaterPointDetailPage() {
               <CardTitle>Current Status &amp; Quality</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
+              {(waterPoint.building || waterPoint.floor) && (
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-900 font-medium">
+                  📍 {waterPoint.building}
+                  {waterPoint.floor ? ` • Floor ${waterPoint.floor}` : ""}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider block mb-1">
@@ -119,14 +207,7 @@ export default function WaterPointDetailPage() {
                   <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider block mb-1">
                     Crowd Level
                   </span>
-                  {crowd ? (
-                    <CrowdBadge
-                      level={crowd.level}
-                      percentage={crowd.percentage}
-                    />
-                  ) : (
-                    <span className="text-xs text-gray-400">Unavailable</span>
-                  )}
+                  <CrowdBadge level={null} />
                 </div>
               </div>
 
@@ -138,23 +219,31 @@ export default function WaterPointDetailPage() {
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   <div className="flex justify-between py-1 border-b border-gray-100">
                     <dt className="text-gray-500">Dispenser ID</dt>
-                    <dd className="font-mono text-gray-800 text-xs">{waterPoint._id}</dd>
+                    <dd className="font-mono text-gray-800 text-xs">
+                      {waterPoint._id}
+                    </dd>
                   </div>
                   <div className="flex justify-between py-1 border-b border-gray-100">
                     <dt className="text-gray-500">Dispenser Capacity</dt>
                     <dd className="font-semibold text-gray-800">
-                      {waterPoint.capacity} L / min
+                      {waterPoint.capacity != null
+                        ? `${waterPoint.capacity} L / min`
+                        : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between py-1 border-b border-gray-100">
                     <dt className="text-gray-500">Crowd Radius</dt>
                     <dd className="font-semibold text-gray-800">
-                      {waterPoint.crowdRadius} meters
+                      {waterPoint.crowdRadius != null
+                        ? `${waterPoint.crowdRadius} meters`
+                        : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between py-1 border-b border-gray-100">
                     <dt className="text-gray-500">Last Verified</dt>
-                    <dd className="text-gray-800 text-xs">{formattedDate}</dd>
+                    <dd className="text-gray-800 text-xs">
+                      {formatRelativeTime(waterPoint.lastUpdated)} ({formattedDate})
+                    </dd>
                   </div>
                 </dl>
               </div>
@@ -191,38 +280,46 @@ export default function WaterPointDetailPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-500">Latitude:</span>
                   <span className="font-semibold text-gray-900">
-                    {waterPoint.latitude.toFixed(6)}
+                    {waterPoint.latitude != null
+                      ? waterPoint.latitude.toFixed(6)
+                      : "—"}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Longitude:</span>
                   <span className="font-semibold text-gray-900">
-                    {waterPoint.longitude.toFixed(6)}
+                    {waterPoint.longitude != null
+                      ? waterPoint.longitude.toFixed(6)
+                      : "—"}
                   </span>
                 </div>
               </div>
 
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Currently displayed by GPS latitude and longitude. An enhancement
-                request has been submitted to add descriptive names (e.g. &ldquo;Behind
-                Staircase 2&rdquo;).
-              </p>
-
-              <div className="pt-2">
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${waterPoint.latitude},${waterPoint.longitude}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
-                >
-                  <span>Open in External Maps</span>
-                  <span>↗</span>
-                </a>
-              </div>
+              {waterPoint.latitude != null && waterPoint.longitude != null && (
+                <div className="pt-2">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${waterPoint.latitude},${waterPoint.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+                  >
+                    <span>Open in External Maps</span>
+                    <span>↗</span>
+                  </a>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
     </PageLayout>
+  );
+}
+
+export default function WaterPointDetailPage() {
+  return (
+    <ProtectedRoute>
+      <WaterPointDetailContent />
+    </ProtectedRoute>
   );
 }
