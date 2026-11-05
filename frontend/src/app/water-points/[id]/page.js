@@ -141,9 +141,21 @@ function WaterPointDetailContent({ userPosition = null }) {
       })
     : "Recently";
 
-  const subtitle = distance != null
-    ? `Campus Drinking Point Details • ${formatDistance(distance)} from your current location`
-    : "Campus Drinking Point Details";
+  const locationText = [
+    waterPoint.building,
+    waterPoint.floor ? `Floor ${waterPoint.floor}` : null,
+    waterPoint.landmark ? `Near ${waterPoint.landmark}` : null,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+
+  const subtitle = locationText
+    ? distance != null
+      ? `${locationText} • ${formatDistance(distance)} from your current location`
+      : locationText
+    : distance != null
+      ? `Campus Drinking Point Details • ${formatDistance(distance)} from your current location`
+      : "Campus Drinking Point Details";
 
   return (
     <PageLayout
@@ -174,10 +186,16 @@ function WaterPointDetailContent({ userPosition = null }) {
               <CardTitle>Current Status &amp; Quality</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {(waterPoint.building || waterPoint.floor) && (
+              {(waterPoint.building || waterPoint.floor || waterPoint.landmark) && (
                 <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-900 font-medium">
-                  📍 {waterPoint.building}
-                  {waterPoint.floor ? ` • Floor ${waterPoint.floor}` : ""}
+                  📍{" "}
+                  {[
+                    waterPoint.building,
+                    waterPoint.floor ? `Floor ${waterPoint.floor}` : null,
+                    waterPoint.landmark ? `Near ${waterPoint.landmark}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
                 </div>
               )}
 

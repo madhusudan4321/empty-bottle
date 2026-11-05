@@ -144,7 +144,12 @@ export default function WaterPointTable({
               filteredPoints.map((wp) => (
                 <tr key={wp._id} className="hover:bg-gray-50 transition">
                   <td className="px-4 py-3 font-medium text-gray-900">
-                    {wp.name}
+                    <div>{wp.name}</div>
+                    {(wp.building || wp.floor) && (
+                      <div className="text-xs text-gray-500 font-normal mt-0.5">
+                        {[wp.building, wp.floor].filter(Boolean).join(" • ")}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">{getAvailabilityBadge(wp.availability)}</td>
                   <td className="px-4 py-3 space-x-1.5">

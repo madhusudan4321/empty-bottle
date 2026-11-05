@@ -142,10 +142,15 @@ function WaterPointsContent({ userPosition = null }) {
                       )}
                     </div>
 
-                    {(wp.building || wp.floor) && (
+                    {(wp.building || wp.floor || wp.landmark) && (
                       <p className="text-xs text-gray-600 font-medium">
-                        {wp.building}
-                        {wp.floor ? ` • Floor ${wp.floor}` : ""}
+                        {[
+                          wp.building,
+                          wp.floor ? `Floor ${wp.floor}` : null,
+                          wp.landmark ? `Near ${wp.landmark}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
                       </p>
                     )}
 

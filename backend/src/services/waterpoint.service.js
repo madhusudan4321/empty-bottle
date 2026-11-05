@@ -8,6 +8,9 @@ const VALID_CLEANLINESS = ["clean", "average", "dirty"];
 
 const WHITELISTED_UPDATE_FIELDS = [
   "name",
+  "building",
+  "floor",
+  "landmark",
   "latitude",
   "longitude",
   "capacity",
@@ -30,6 +33,24 @@ const validateNumericPositive = (value, fieldName) => {
   if (value !== undefined && (typeof value !== "number" || isNaN(value) || value <= 0)) {
     throw { status: 400, message: `${fieldName} must be a positive number` };
   }
+};
+
+const validateCrowdRadius = (value) => {
+  if (value !== undefined && (typeof value !== "number" || isNaN(value) || value < 10)) {
+    throw { status: 400, message: "Crowd radius must be a number of at least 10 metres" };
+  }
+};
+
+const sanitizeOptionalText = (value, maxLength, fieldName) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") {
+    throw { status: 400, message: `${fieldName} must be a string` };
+  }
+  const trimmed = value.trim();
+  if (trimmed.length > maxLength) {
+    throw { status: 400, message: `${fieldName} must not exceed ${maxLength} characters` };
+  }
+  return trimmed.length > 0 ? trimmed : null;
 };
 
 const validateEnums = ({ availability, temperature, cleanliness }) => {
@@ -71,6 +92,9 @@ const getWaterPointById = async (id) => {
 const createWaterPoint = async (data) => {
   const {
     name,
+    building,
+    floor,
+    landmark,
     latitude,
     longitude,
     capacity,
@@ -86,8 +110,12 @@ const createWaterPoint = async (data) => {
 
   validateCoordinates(latitude, longitude);
   validateNumericPositive(capacity, "Capacity");
-  validateNumericPositive(crowdRadius, "Crowd radius");
+  validateCrowdRadius(crowdRadius);
   validateEnums({ availability, temperature, cleanliness });
+
+  const buildingVal = sanitizeOptionalText(building, 100, "Building");
+  const floorVal = sanitizeOptionalText(floor, 50, "Floor");
+  const landmarkVal = sanitizeOptionalText(landmark, 200, "Landmark");
 
   const payload = {
     name: name.trim(),
@@ -95,6 +123,10 @@ const createWaterPoint = async (data) => {
     longitude,
     lastUpdated: new Date(),
   };
+
+  if (buildingVal) payload.building = buildingVal;
+  if (floorVal) payload.floor = floorVal;
+  if (landmarkVal) payload.landmark = landmarkVal;
 
   if (capacity !== undefined) payload.capacity = capacity;
   if (crowdRadius !== undefined) payload.crowdRadius = crowdRadius;
@@ -134,6 +166,36 @@ const updateWaterPoint = async (id, data) => {
     updates.name = updates.name.trim();
   }
 
+  if (updates.building !== undefined) {
+    const val = sanitizeOptionalText(updates.building, 100, "Building");
+    if (val) {
+      updates.building = val;
+    } else {
+      updates.$unset = { ...updates.$unset, building: 1 };
+      delete updates.building;
+    }
+  }
+
+  if (updates.floor !== undefined) {
+    const val = sanitizeOptionalText(updates.floor, 50, "Floor");
+    if (val) {
+      updates.floor = val;
+    } else {
+      updates.$unset = { ...updates.$unset, floor: 1 };
+      delete updates.floor;
+    }
+  }
+
+  if (updates.landmark !== undefined) {
+    const val = sanitizeOptionalText(updates.landmark, 200, "Landmark");
+    if (val) {
+      updates.landmark = val;
+    } else {
+      updates.$unset = { ...updates.$unset, landmark: 1 };
+      delete updates.landmark;
+    }
+  }
+
   if (updates.latitude !== undefined || updates.longitude !== undefined) {
     const lat = updates.latitude !== undefined ? updates.latitude : waterPoint.latitude;
     const lng = updates.longitude !== undefined ? updates.longitude : waterPoint.longitude;
@@ -145,7 +207,7 @@ const updateWaterPoint = async (id, data) => {
   }
 
   if (updates.crowdRadius !== undefined) {
-    validateNumericPositive(updates.crowdRadius, "Crowd radius");
+    validateCrowdRadius(updates.crowdRadius);
   }
 
   validateEnums({
@@ -156,8 +218,18 @@ const updateWaterPoint = async (id, data) => {
 
   updates.lastUpdated = new Date();
 
-  return await WaterPoint.findByIdAndUpdate(id, updates, {
-    new: true,
+  let updateQuery = updates;
+  if (updates.$unset && Object.keys(updates.$unset).length > 0) {
+    const unsetFields = updates.$unset;
+    delete updates.$unset;
+    updateQuery = {
+      $set: updates,
+      $unset: unsetFields,
+    };
+  }
+
+  return await WaterPoint.findByIdAndUpdate(id, updateQuery, {
+    returnDocument: "after",
     runValidators: true,
   });
 };
@@ -196,4 +268,3 @@ module.exports = {
   updateWaterPoint,
   deleteWaterPoint,
 };
-
