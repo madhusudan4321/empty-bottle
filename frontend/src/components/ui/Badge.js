@@ -61,8 +61,16 @@ export function AvailabilityBadge({ availability, className = "" }) {
   );
 }
 
-// Crowd Badge: MUST always be clearly labeled as Estimated
+// Crowd Badge: accepts optional level. When level is null/undefined, renders neutral grey badge
 export function CrowdBadge({ level, percentage, className = "" }) {
+  if (!level) {
+    return (
+      <Badge variant="gray" className={className}>
+        <span>Crowd data unavailable</span>
+      </Badge>
+    );
+  }
+
   const normalizedLevel = (level || "").toUpperCase();
   const map = {
     LOW: { label: "Low Crowd", variant: "green" },
@@ -71,7 +79,7 @@ export function CrowdBadge({ level, percentage, className = "" }) {
   };
 
   const config = map[normalizedLevel] || {
-    label: "Crowd Unknown",
+    label: "Crowd data unavailable",
     variant: "gray",
   };
 
@@ -148,4 +156,3 @@ export function StatusBadge({ status, className = "" }) {
     </Badge>
   );
 }
-

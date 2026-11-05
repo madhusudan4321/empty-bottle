@@ -1,48 +1,86 @@
 "use client";
 
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import PageLayout from "@/components/ui/PageLayout";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/Card";
+import { Card, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
+import ErrorMessage from "@/components/ui/ErrorMessage";
+import EmptyState from "@/components/ui/EmptyState";
 import {
   AvailabilityBadge,
   CrowdBadge,
   CleanlinessBadge,
   TemperatureBadge,
 } from "@/components/ui/Badge";
-import {
-  MOCK_WATER_POINTS,
-  MOCK_CROWD_DATA,
-  MOCK_USER_COORDINATES,
-} from "@/lib/mockData";
+import { apiFetch } from "@/lib/api";
 import {
   getDistanceInMeters,
   formatDistance,
+  formatRelativeTime,
 } from "./distance";
 
-export default function WaterPointsPage() {
-  const userCoords = MOCK_USER_COORDINATES;
+function WaterPointsContent({ userPosition = null }) {
+  const [waterPoints, setWaterPoints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Calculate distance for all water points and sort ascending by proximity
-  const waterPoints = [...MOCK_WATER_POINTS]
-    .map((wp) => {
-      const distance = getDistanceInMeters(
-        userCoords.latitude,
-        userCoords.longitude,
-        wp.latitude,
-        wp.longitude
-      );
-      return { ...wp, distance };
-    })
-    .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+  const fetchData = useCallback(async () => {
+    try {
+      const data = await apiFetch("/api/water-points");
+      setWaterPoints(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.message || "Failed to load water points");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchData();
+  };
+
+  // When userPosition is present: sort by proximity; otherwise sort alphabetically by name with no distance
+  const sortedWaterPoints = useMemo(() => {
+    if (
+      userPosition &&
+      typeof userPosition.latitude === "number" &&
+      typeof userPosition.longitude === "number"
+    ) {
+      return [...waterPoints]
+        .map((wp) => ({
+          ...wp,
+          distance: getDistanceInMeters(
+            userPosition.latitude,
+            userPosition.longitude,
+            wp.latitude,
+            wp.longitude
+          ),
+        }))
+        .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+    }
+
+    return [...waterPoints].sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "")
+    );
+  }, [waterPoints, userPosition]);
 
   return (
     <PageLayout
       title="Campus Water Points"
-      subtitle="Find clean and cold drinking water dispensers nearest to your current location."
+      subtitle={
+        userPosition
+          ? "Drinking water dispensers sorted by proximity to your current location."
+          : "All campus drinking water dispensers and live statuses."
+      }
       actions={
         <Link href="/reports/new">
           <Button variant="outline" size="sm">
@@ -51,39 +89,37 @@ export default function WaterPointsPage() {
         </Link>
       }
     >
-      {/* Map component placeholder (Lead's feature pending merge) */}
-      <div className="mb-6 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-6 text-center">
-        <div className="flex flex-col items-center justify-center">
-          <span className="text-3xl mb-1">🗺️</span>
-          <h3 className="text-sm font-semibold text-blue-900">
-            Interactive Campus Water Map
-          </h3>
-          <p className="text-xs text-blue-700 max-w-md mt-1">
-            The interactive campus map will be embedded here once the Lead&apos;s
-            Map component (`components/map/WaterMap.js`) is merged.
-          </p>
+      {/* Loading State */}
+      {loading && (
+        <div className="py-16 flex flex-col items-center justify-center">
+          <Spinner size="lg" />
+          <p className="mt-3 text-sm text-gray-500">Loading water points...</p>
         </div>
-      </div>
+      )}
 
-      {/* Note about location coordinates vs description */}
-      <div className="mb-6 p-3 bg-gray-100 rounded-lg text-xs text-gray-600 flex items-center justify-between">
-        <span>
-          📌 <strong>Note on locations:</strong> Locations currently display GPS
-          coordinates (latitude &amp; longitude). We have recommended that the Lead
-          add an optional <code>locationDescription</code> field to the WaterPoint model.
-        </span>
-      </div>
+      {/* Error State */}
+      {!loading && error && (
+        <div className="mb-6">
+          <ErrorMessage
+            title="Failed to load water points"
+            message={error}
+            onRetry={handleRetry}
+          />
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && !error && sortedWaterPoints.length === 0 && (
+        <EmptyState
+          title="No Water Points Found"
+          description="There are currently no drinking water points registered in the system."
+        />
+      )}
 
       {/* Water Points List */}
-      <div className="space-y-4">
-        {waterPoints.map((wp) => {
-          const crowd = MOCK_CROWD_DATA[wp._id];
-          const formattedDate = new Date(wp.lastUpdated).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-
-          return (
+      {!loading && !error && sortedWaterPoints.length > 0 && (
+        <div className="space-y-4">
+          {sortedWaterPoints.map((wp) => (
             <Card
               key={wp._id}
               className="hover:border-blue-300 transition-all shadow-sm"
@@ -99,24 +135,44 @@ export default function WaterPointsPage() {
                       >
                         {wp.name}
                       </Link>
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                        {formatDistance(wp.distance)} away
-                      </span>
+                      {wp.distance != null && (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                          {formatDistance(wp.distance)} away
+                        </span>
+                      )}
                     </div>
 
+                    {(wp.building || wp.floor || wp.landmark) && (
+                      <p className="text-xs text-gray-600 font-medium">
+                        {[
+                          wp.building,
+                          wp.floor ? `Floor ${wp.floor}` : null,
+                          wp.landmark ? `Near ${wp.landmark}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </p>
+                    )}
+
                     <p className="text-xs text-gray-500">
-                      <strong>Location (GPS):</strong> Lat {wp.latitude.toFixed(5)}, Long {wp.longitude.toFixed(5)}
+                      <strong>Location (GPS):</strong> Lat{" "}
+                      {wp.latitude != null ? wp.latitude.toFixed(5) : "—"}, Long{" "}
+                      {wp.longitude != null ? wp.longitude.toFixed(5) : "—"}
                     </p>
 
                     <p className="text-xs text-gray-400">
-                      Last status check: today at {formattedDate}
+                      Last updated {formatRelativeTime(wp.lastUpdated)}
                     </p>
                   </div>
 
                   {/* Right Column: Actions */}
                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                     <Link href={`/reports/new?waterPointId=${wp._id}`}>
-                      <Button variant="ghost" size="sm" className="text-xs text-amber-700 hover:bg-amber-50">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-amber-700 hover:bg-amber-50"
+                      >
                         Report Issue
                       </Button>
                     </Link>
@@ -133,18 +189,21 @@ export default function WaterPointsPage() {
                   <AvailabilityBadge availability={wp.availability} />
                   <TemperatureBadge temperature={wp.temperature} />
                   <CleanlinessBadge cleanliness={wp.cleanliness} />
-                  {crowd && (
-                    <CrowdBadge
-                      level={crowd.level}
-                      percentage={crowd.percentage}
-                    />
-                  )}
+                  <CrowdBadge level={null} />
                 </div>
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </PageLayout>
+  );
+}
+
+export default function WaterPointsPage() {
+  return (
+    <ProtectedRoute>
+      <WaterPointsContent />
+    </ProtectedRoute>
   );
 }
