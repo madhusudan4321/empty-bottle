@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import ShareLocationToggle from "@/components/crowd/ShareLocationToggle";
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -97,6 +98,11 @@ export default function Navbar() {
 
           {/* Desktop Right Actions */}
           <div className="hidden md:flex items-center gap-3">
+            {!loading && user && user.role === "student" && (
+              <div className="border-r border-gray-200 pr-3">
+                <ShareLocationToggle compact />
+              </div>
+            )}
             {loading ? null : user ? (
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
@@ -203,6 +209,12 @@ export default function Navbar() {
                 </Link>
               );
             })}
+
+          {!loading && user && user.role === "student" && (
+            <div className="pt-2 pb-1 border-t border-gray-100">
+              <ShareLocationToggle compact />
+            </div>
+          )}
 
           {!loading && user && (
             <div className="pt-3 mt-2 border-t border-gray-100 flex items-center justify-between px-3">

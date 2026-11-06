@@ -22,6 +22,7 @@ import {
   TemperatureBadge,
 } from "@/components/ui/Badge";
 import { apiFetch } from "@/lib/api";
+import { useCrowd } from "@/hooks/useCrowd";
 import {
   getDistanceInMeters,
   formatDistance,
@@ -32,6 +33,8 @@ function WaterPointDetailContent({ userPosition = null }) {
   const params = useParams();
   const router = useRouter();
   const id = params?.id;
+  const { crowdById } = useCrowd();
+  const crowd = id ? crowdById?.[id] : null;
 
   const [waterPoint, setWaterPoint] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -225,7 +228,19 @@ function WaterPointDetailContent({ userPosition = null }) {
                   <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider block mb-1">
                     Crowd Level
                   </span>
-                  <CrowdBadge level={null} />
+                  {crowd ? (
+                    <div className="space-y-1">
+                      <CrowdBadge
+                        level={crowd.level}
+                        percentage={crowd.percentage}
+                      />
+                      <div className="text-[11px] text-gray-500 font-medium">
+                        {crowd.count} people nearby (estimated)
+                      </div>
+                    </div>
+                  ) : (
+                    <CrowdBadge level={null} />
+                  )}
                 </div>
               </div>
 
