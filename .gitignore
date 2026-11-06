@@ -1,5 +1,3 @@
-cd D:\Empty-bottle
-@'
 node_modules
 .env
 .env.local
@@ -10,4 +8,3 @@ build
 coverage
 .DS_Store
 *.log
-'@ | Set-Content .gitignore -Encoding ascii
