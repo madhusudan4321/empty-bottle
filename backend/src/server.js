@@ -11,6 +11,7 @@ const app = express();
 // CLIENT_URL can hold several URLs separated by commas
 const allowedOrigins = [
   "http://localhost:3000",
+  "https://empty-bottle.vercel.app/",
   ...(process.env.CLIENT_URL || "").split(",").map((u) => u.trim()).filter(Boolean),
 ];
 
