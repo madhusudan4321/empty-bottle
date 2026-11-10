@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
-export function useGeolocation() {
+export function useGeolocation(options = {}) {
   const [position, setPosition] = useState(null);
   const [accuracy, setAccuracy] = useState(null);
   const [status, setStatus] = useState("idle");
@@ -17,7 +17,7 @@ export function useGeolocation() {
     }
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback((overrideOptions = {}) => {
     if (typeof window === "undefined" || !navigator.geolocation) {
       const err = new Error("Geolocation is not supported by your browser.");
       setStatus("unavailable");
@@ -28,6 +28,16 @@ export function useGeolocation() {
     stop();
     setStatus("requesting");
     setError(null);
+
+    const geoOptions = {
+      enableHighAccuracy:
+        overrideOptions.enableHighAccuracy ??
+        options.enableHighAccuracy ??
+        true,
+      maximumAge:
+        overrideOptions.maximumAge ?? options.maximumAge ?? 0,
+      timeout: overrideOptions.timeout ?? options.timeout ?? 20000,
+    };
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
@@ -50,13 +60,9 @@ export function useGeolocation() {
         setStatus(newStatus);
         setError(new Error(message));
       },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 20000,
-      }
+      geoOptions
     );
-  }, [stop]);
+  }, [stop, options.enableHighAccuracy, options.maximumAge, options.timeout]);
 
   useEffect(() => {
     return () => {

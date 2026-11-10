@@ -16,6 +16,7 @@ import {
   TemperatureBadge,
 } from "@/components/ui/Badge";
 import { apiFetch } from "@/lib/api";
+import { useCrowd } from "@/hooks/useCrowd";
 import {
   getDistanceInMeters,
   formatDistance,
@@ -23,6 +24,7 @@ import {
 } from "./distance";
 
 function WaterPointsContent({ userPosition = null }) {
+  const { crowdById } = useCrowd();
   const [waterPoints, setWaterPoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -189,7 +191,19 @@ function WaterPointsContent({ userPosition = null }) {
                   <AvailabilityBadge availability={wp.availability} />
                   <TemperatureBadge temperature={wp.temperature} />
                   <CleanlinessBadge cleanliness={wp.cleanliness} />
-                  <CrowdBadge level={null} />
+                  {crowdById?.[wp._id] ? (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <CrowdBadge
+                        level={crowdById[wp._id].level}
+                        percentage={crowdById[wp._id].percentage}
+                      />
+                      <span className="text-xs text-gray-500 font-medium">
+                        {crowdById[wp._id].count} people nearby (estimated)
+                      </span>
+                    </div>
+                  ) : (
+                    <CrowdBadge level={null} />
+                  )}
                 </div>
               </CardContent>
             </Card>

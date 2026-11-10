@@ -25,7 +25,7 @@ export const clearToken = () => {
 // Calls the backend and returns res.data. Throws Error(message) on failure.
 // Usage: const data = await apiFetch("/api/water-points");
 //        await apiFetch("/api/reports", { method: "POST", body: { ... } });
-export async function apiFetch(path, { method = "GET", body, headers = {} } = {}) {
+export async function apiFetch(path, { method = "GET", body, headers = {}, keepalive } = {}) {
   const token = getToken();
 
   const res = await fetch(`${API_URL}${path}`, {
@@ -36,6 +36,7 @@ export async function apiFetch(path, { method = "GET", body, headers = {} } = {}
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
+    ...(keepalive !== undefined ? { keepalive } : {}),
   });
 
   let json = null;

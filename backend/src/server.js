@@ -49,6 +49,10 @@ app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/water-points", waterPointRoutes);
 app.use("/api/reports", require("./routes/report.routes"));
+app.use("/api/presence", require("./routes/presence.routes"));
+app.use("/api/crowd", require("./routes/crowd.routes"));
+app.use("/api/maintenance", require("./routes/maintenance.routes"));
+app.use("/api/admin", require("./routes/admin.routes"));
 
 // 404 handler
 app.use((req, res) => {

@@ -1,5 +1,6 @@
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { CrowdTrackerProvider } from "@/components/crowd/CrowdTrackerProvider";
 
 export const metadata = {
   title: "Empty Bottle",
@@ -10,7 +11,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <CrowdTrackerProvider>{children}</CrowdTrackerProvider>
+        </AuthProvider>
       </body>
     </html>
   );

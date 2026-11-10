@@ -17,6 +17,8 @@ import {
   StatusBadge,
 } from "@/components/ui/Badge";
 import { useAuth } from "@/context/AuthContext";
+import { useCrowd } from "@/hooks/useCrowd";
+import ShareLocationToggle from "@/components/crowd/ShareLocationToggle";
 import { apiFetch } from "@/lib/api";
 import { ISSUE_TYPE_LABELS } from "@/lib/constants";
 import {
@@ -27,6 +29,7 @@ import {
 
 function DashboardContent({ userPosition = null }) {
   const { user } = useAuth();
+  const { crowdById } = useCrowd();
   const [waterPoints, setWaterPoints] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -150,6 +153,11 @@ function DashboardContent({ userPosition = null }) {
         </Link>
       </div>
 
+      {/* Share Location for Crowd Estimation */}
+      <div className="mb-8">
+        <ShareLocationToggle />
+      </div>
+
       {/* Loading State */}
       {loading && (
         <div className="py-16 flex flex-col items-center justify-center">
@@ -253,7 +261,19 @@ function DashboardContent({ userPosition = null }) {
                       <AvailabilityBadge availability={wp.availability} />
                       <TemperatureBadge temperature={wp.temperature} />
                       <CleanlinessBadge cleanliness={wp.cleanliness} />
-                      <CrowdBadge level={null} />
+                      {crowdById?.[wp._id] ? (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <CrowdBadge
+                            level={crowdById[wp._id].level}
+                            percentage={crowdById[wp._id].percentage}
+                          />
+                          <span className="text-xs text-gray-500 font-medium">
+                            {crowdById[wp._id].count} people nearby (estimated)
+                          </span>
+                        </div>
+                      ) : (
+                        <CrowdBadge level={null} />
+                      )}
                     </div>
                   </CardContent>
                 </Card>
