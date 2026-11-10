@@ -106,3 +106,4 @@ export default function StatusTimeline({ currentStatus, className = "" }) {
     </div>
   );
 }
+

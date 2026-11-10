@@ -68,3 +68,4 @@ export default function StaffHeader({ onRefresh, refreshing = false }) {
     </header>
   );
 }
+

@@ -56,3 +56,4 @@ export function SkeletonTable({ rows = 5, cols = 4, className = "" }) {
     </div>
   );
 }
+
