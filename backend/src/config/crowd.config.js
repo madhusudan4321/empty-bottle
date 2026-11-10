@@ -7,7 +7,7 @@ const parseNumber = (val, defaultVal) => {
 const crowdConfig = {
   lowMaxPercent: parseNumber(process.env.CROWD_LOW_MAX, 40),
   moderateMaxPercent: parseNumber(process.env.CROWD_MODERATE_MAX, 80),
-  presenceTtlSeconds: parseNumber(process.env.PRESENCE_TTL_SECONDS, 300),
+  presenceTtlSeconds: parseNumber(process.env.PRESENCE_TTL_SECONDS, 120),
 };
 
 module.exports = crowdConfig;
