@@ -5,8 +5,10 @@ import { apiFetch } from "@/lib/api";
 import WaterPointTable from "@/components/admin/WaterPointTable";
 import WaterPointModal from "@/components/admin/WaterPointModal";
 import DeleteConfirmModal from "@/components/admin/DeleteConfirmModal";
+import { useToast } from "@/components/ui/Toast";
 
 export default function AdminWaterPointsPage() {
+  const { success, error: toastError } = useToast();
   const [waterPoints, setWaterPoints] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -86,29 +88,26 @@ export default function AdminWaterPointsPage() {
           method: "PUT",
           body: payload,
         });
-        setFeedback({
-          type: "success",
-          message: `Water point "${payload.name}" updated successfully.`,
-        });
+        const msg = `Water point "${payload.name}" updated successfully.`;
+        setFeedback({ type: "success", message: msg });
+        success(msg);
       } else {
         // Create mode (POST)
         await apiFetch("/api/water-points", {
           method: "POST",
           body: payload,
         });
-        setFeedback({
-          type: "success",
-          message: `Water point "${payload.name}" created successfully.`,
-        });
+        const msg = `Water point "${payload.name}" created successfully.`;
+        setFeedback({ type: "success", message: msg });
+        success(msg);
       }
 
       handleCloseModal();
       await refreshWaterPoints();
     } catch (err) {
-      setFeedback({
-        type: "error",
-        message: err.message || "Failed to save water point.",
-      });
+      const errMsg = err.message || "Failed to save water point.";
+      setFeedback({ type: "error", message: errMsg });
+      toastError(errMsg);
     } finally {
       setActionLoading(false);
     }
@@ -134,14 +133,15 @@ export default function AdminWaterPointsPage() {
       await apiFetch(`/api/water-points/${waterPointToDelete._id}`, {
         method: "DELETE",
       });
-      setFeedback({
-        type: "success",
-        message: `Water point "${waterPointToDelete.name}" deleted successfully.`,
-      });
+      const msg = `Water point "${waterPointToDelete.name}" deleted successfully.`;
+      setFeedback({ type: "success", message: msg });
+      success(msg);
       handleCloseDelete();
       await refreshWaterPoints();
     } catch (err) {
-      setDeleteError(err.message || "Failed to delete water point.");
+      const errMsg = err.message || "Failed to delete water point.";
+      setDeleteError(errMsg);
+      toastError(errMsg);
     } finally {
       setActionLoading(false);
     }

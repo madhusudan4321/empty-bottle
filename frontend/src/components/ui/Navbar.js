@@ -33,8 +33,11 @@ export default function Navbar() {
       navLinks = [{ href: "/staff", label: "Staff" }];
     } else if (user.role === "admin") {
       navLinks = [
-        { href: "/admin", label: "Admin" },
+        { href: "/admin", label: "Dashboard" },
+        { href: "/admin/maintenance", label: "Maintenance" },
+        { href: "/admin/reports", label: "Reports" },
         { href: "/admin/water-points", label: "Water Points" },
+        { href: "/admin/staff", label: "Staff" },
       ];
     }
   }
