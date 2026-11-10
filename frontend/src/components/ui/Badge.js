@@ -156,3 +156,50 @@ export function StatusBadge({ status, className = "" }) {
     </Badge>
   );
 }
+
+// Priority: "low" | "medium" | "high" | "critical"
+export function PriorityBadge({ priority, className = "" }) {
+  const map = {
+    critical: { label: "Critical", variant: "red", dot: "bg-red-500 animate-pulse" },
+    high: { label: "High", variant: "orange", dot: "bg-orange-500" },
+    medium: { label: "Medium", variant: "amber", dot: "bg-amber-500" },
+    low: { label: "Low", variant: "blue", dot: "bg-blue-500" },
+  };
+
+  const config = map[priority] || {
+    label: priority || "Normal",
+    variant: "gray",
+    dot: "bg-gray-400",
+  };
+
+  return (
+    <Badge variant={config.variant} className={`font-semibold ${className}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} />
+      {config.label}
+    </Badge>
+  );
+}
+
+// Maintenance Status: "reported" | "acknowledged" | "assigned" | "in_progress" | "fixed" | "verified" | "available"
+export function MaintenanceStatusBadge({ status, className = "" }) {
+  const map = {
+    reported: { label: "Reported", variant: "amber" },
+    acknowledged: { label: "Acknowledged", variant: "blue" },
+    assigned: { label: "Assigned", variant: "purple" },
+    in_progress: { label: "In Progress", variant: "cyan" },
+    fixed: { label: "Fixed", variant: "green" },
+    verified: { label: "Verified", variant: "teal" },
+    available: { label: "Available", variant: "green" },
+  };
+
+  const config = map[status] || {
+    label: (status || "Unknown").replace("_", " "),
+    variant: "gray",
+  };
+
+  return (
+    <Badge variant={config.variant} className={className}>
+      {config.label}
+    </Badge>
+  );
+}
