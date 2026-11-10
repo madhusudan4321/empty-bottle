@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const StatusReport = require("../models/StatusReport");
 const WaterPoint = require("../models/WaterPoint");
+const maintenanceService = require("../services/maintenance.service");
 
 const ALLOWED_ISSUE_TYPES = [
   "water_unavailable",
@@ -63,6 +64,13 @@ const createReport = async (req, res) => {
       description: sanitizedDescription,
       status: "open",
     });
+
+    // Link to maintenance workflow
+    try {
+      await maintenanceService.upsertFromReport(report);
+    } catch (mErr) {
+      console.error("Error linking report to maintenance request:", mErr);
+    }
 
     const populatedReport = await StatusReport.findById(report._id).populate(
       "waterPointId",
