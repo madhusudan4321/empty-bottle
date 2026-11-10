@@ -33,8 +33,20 @@ function WaterPointDetailContent({ userPosition = null }) {
   const params = useParams();
   const router = useRouter();
   const id = params?.id;
-  const { crowdById } = useCrowd();
+  const { crowdById, lastUpdated } = useCrowd();
   const crowd = id ? crowdById?.[id] : null;
+  const [secondsAgo, setSecondsAgo] = useState(0);
+
+  useEffect(() => {
+    if (!lastUpdated) return;
+    const update = () => {
+      const diff = Math.max(0, Math.floor((Date.now() - lastUpdated) / 1000));
+      setSecondsAgo(diff);
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [lastUpdated]);
 
   const [waterPoint, setWaterPoint] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -237,9 +249,19 @@ function WaterPointDetailContent({ userPosition = null }) {
                       <div className="text-[11px] text-gray-500 font-medium">
                         {crowd.count} people nearby (estimated)
                       </div>
+                      <div className="text-[10px] text-gray-400">
+                        Updated {secondsAgo}s ago
+                      </div>
                     </div>
                   ) : (
-                    <CrowdBadge level={null} />
+                    <div className="space-y-1">
+                      <CrowdBadge level={null} />
+                      {lastUpdated && (
+                        <div className="text-[10px] text-gray-400">
+                          Updated {secondsAgo}s ago
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

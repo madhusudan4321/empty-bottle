@@ -7,12 +7,13 @@ export function useCrowd() {
   const [crowdById, setCrowdById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const intervalRef = useRef(null);
 
   const fetchCrowd = useCallback(async () => {
     try {
-      const data = await apiFetch("/api/crowd");
+      const data = await apiFetch("/api/crowd", { cache: "no-store" });
       const map = {};
       if (Array.isArray(data)) {
         for (const item of data) {
@@ -22,6 +23,7 @@ export function useCrowd() {
         }
       }
       setCrowdById(map);
+      setLastUpdated(Date.now());
       setError(null);
     } catch (err) {
       setError(err.message || "Failed to load crowd data");
@@ -57,11 +59,27 @@ export function useCrowd() {
       }
     };
 
+    const handleFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchCrowd();
+      }
+    };
+
+    const handleCustomRefresh = () => {
+      fetchCrowd();
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("pageshow", handleFocus);
+    window.addEventListener("crowd-refresh", handleCustomRefresh);
 
     return () => {
       stopPolling();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("pageshow", handleFocus);
+      window.removeEventListener("crowd-refresh", handleCustomRefresh);
     };
   }, [fetchCrowd]);
 
@@ -70,5 +88,6 @@ export function useCrowd() {
     loading,
     error,
     refresh: fetchCrowd,
+    lastUpdated,
   };
 }
