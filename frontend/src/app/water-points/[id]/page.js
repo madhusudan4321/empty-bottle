@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/Badge";
 import { apiFetch } from "@/lib/api";
 import { useCrowd } from "@/hooks/useCrowd";
+import { useMyLocation } from "@/hooks/useMyLocation";
+import WaterMapClient from "@/components/map/WaterMapClient";
 import {
   getDistanceInMeters,
   formatDistance,
@@ -34,6 +36,12 @@ function WaterPointDetailContent({ userPosition = null }) {
   const router = useRouter();
   const id = params?.id;
   const { crowdById, lastUpdated } = useCrowd();
+  const {
+    position: myPosition,
+    request: onRequestLocation,
+  } = useMyLocation();
+
+  const effectivePosition = myPosition || userPosition;
   const crowd = id ? crowdById?.[id] : null;
   const [secondsAgo, setSecondsAgo] = useState(0);
 
@@ -136,14 +144,14 @@ function WaterPointDetailContent({ userPosition = null }) {
   }
 
   const distance =
-    userPosition &&
-    typeof userPosition.latitude === "number" &&
-    typeof userPosition.longitude === "number" &&
+    effectivePosition &&
+    typeof effectivePosition.latitude === "number" &&
+    typeof effectivePosition.longitude === "number" &&
     typeof waterPoint.latitude === "number" &&
     typeof waterPoint.longitude === "number"
       ? getDistanceInMeters(
-          userPosition.latitude,
-          userPosition.longitude,
+          effectivePosition.latitude,
+          effectivePosition.longitude,
           waterPoint.latitude,
           waterPoint.longitude
         )
@@ -326,6 +334,26 @@ function WaterPointDetailContent({ userPosition = null }) {
 
         {/* Sidebar: Location Details */}
         <div className="space-y-6">
+          {/* Water Point Map Preview */}
+          {waterPoint.latitude != null && waterPoint.longitude != null && (
+            <Card className="overflow-hidden">
+              <CardHeader className="py-3 px-4 border-b border-gray-100">
+                <CardTitle className="text-sm">Location Map</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <WaterMapClient
+                  waterPoints={[waterPoint]}
+                  crowdById={crowdById}
+                  selectedId={waterPoint._id}
+                  userPosition={effectivePosition}
+                  onRequestLocation={onRequestLocation}
+                  height="40vh"
+                  showCrowdZones={true}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Location &amp; Coordinates</CardTitle>
