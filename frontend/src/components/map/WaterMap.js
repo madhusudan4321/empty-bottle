@@ -14,12 +14,31 @@ import {
   Polyline,
   useMap,
 } from "react-leaflet";
-import { getWalkingRoute, formatDistance, formatDuration } from "@/lib/routing";
+import {
+  getWalkingRoute,
+  formatDistance,
+  formatDuration,
+  getCompassDirection,
+} from "@/lib/routing";
 import { getDistanceInMeters } from "@/app/water-points/distance";
 
-// Default coordinates: Lovely Professional University (LPU) campus
-const LPU_CENTER = [31.2536, 75.7037];
-const DEFAULT_ZOOM = 16;
+// Precise coordinates & boundaries for Lovely Professional University (LPU), Phagwara, Punjab
+export const LPU_CENTER = [31.2536, 75.7037];
+export const LPU_CAMPUS_BOUNDS = [
+  [31.240, 75.688], // South-West corner
+  [31.266, 75.720], // North-East corner
+];
+
+/**
+ * Checks whether a given coordinate is within or near the LPU campus area.
+ */
+export const isLpuCampusPoint = (lat, lng) =>
+  typeof lat === "number" &&
+  typeof lng === "number" &&
+  lat >= 31.235 &&
+  lat <= 31.270 &&
+  lng >= 75.680 &&
+  lng <= 75.728;
 
 /**
  * Cache for L.divIcon instances so React-Leaflet does not call marker.setIcon()
@@ -35,12 +54,12 @@ function createWaterPointIcon(availability, isSelected) {
       ? "#EF4444" // red
       : "#F59E0B"; // amber (maintenance)
 
-  const size = isSelected ? 38 : 28;
+  const size = isSelected ? 42 : 30;
   const strokeColor = isSelected ? "#1E3A8A" : "#FFFFFF";
-  const strokeWidth = isSelected ? 3 : 2;
+  const strokeWidth = isSelected ? 3.5 : 2;
 
   const html = `
-    <div style="width:${size}px; height:${size}px; display:flex; align-items:center; justify-content:center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+    <div style="width:${size}px; height:${size}px; display:flex; align-items:center; justify-content:center; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.35)); cursor:pointer;">
       <svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M16 2 C16 2, 6 14, 6 21 C6 26.5 10.5 31 16 31 C21.5 31 26 26.5 26 21 C26 14 16 2 16 2 Z"
               fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />
@@ -70,17 +89,17 @@ let cachedUserIcon = null;
 function getUserLocationIcon() {
   if (!cachedUserIcon) {
     const html = `
-      <div style="position:relative; width:22px; height:22px; display:flex; align-items:center; justify-content:center;">
-        <div style="position:absolute; width:22px; height:22px; border-radius:50%; background-color:#3B82F6; opacity:0.35; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-        <div style="width:14px; height:14px; border-radius:50%; background-color:#2563EB; border:2.5px solid #FFFFFF; box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>
+      <div style="position:relative; width:24px; height:24px; display:flex; align-items:center; justify-content:center;">
+        <div style="position:absolute; width:24px; height:24px; border-radius:50%; background-color:#3B82F6; opacity:0.35; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+        <div style="width:14px; height:14px; border-radius:50%; background-color:#2563EB; border:2.5px solid #FFFFFF; box-shadow:0 1px 5px rgba(0,0,0,0.4);"></div>
       </div>
     `;
     cachedUserIcon = L.divIcon({
       className: "user-location-custom-icon",
       html,
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
-      popupAnchor: [0, -11],
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      popupAnchor: [0, -12],
     });
   }
   return cachedUserIcon;
@@ -88,10 +107,10 @@ function getUserLocationIcon() {
 
 // Stable style caches for vector layers
 const crowdZoneStyleCache = {
-  LOW: { color: "#10B981", fillColor: "#10B981", fillOpacity: 0.15, weight: 1.5, dashArray: "3, 3" },
-  MODERATE: { color: "#F59E0B", fillColor: "#F59E0B", fillOpacity: 0.15, weight: 1.5, dashArray: "3, 3" },
-  HIGH: { color: "#EF4444", fillColor: "#EF4444", fillOpacity: 0.15, weight: 1.5, dashArray: "3, 3" },
-  UNKNOWN: { color: "#9CA3AF", fillColor: "#9CA3AF", fillOpacity: 0.15, weight: 1.5, dashArray: "3, 3" },
+  LOW: { color: "#10B981", fillColor: "#10B981", fillOpacity: 0.16, weight: 1.5, dashArray: "3, 3" },
+  MODERATE: { color: "#F59E0B", fillColor: "#F59E0B", fillOpacity: 0.16, weight: 1.5, dashArray: "3, 3" },
+  HIGH: { color: "#EF4444", fillColor: "#EF4444", fillOpacity: 0.16, weight: 1.5, dashArray: "3, 3" },
+  UNKNOWN: { color: "#9CA3AF", fillColor: "#9CA3AF", fillOpacity: 0.16, weight: 1.5, dashArray: "3, 3" },
 };
 
 const userAccuracyPathOptions = {
@@ -101,21 +120,9 @@ const userAccuracyPathOptions = {
   weight: 1,
 };
 
-const routePolylineOptions = {
-  color: "#2563EB",
-  weight: 5,
-  opacity: 0.85,
-};
-
-const fallbackRoutePolylineOptions = {
-  color: "#2563EB",
-  weight: 5,
-  opacity: 0.85,
-  dashArray: "8, 8",
-};
-
 /**
- * Controller subcomponent to handle auto-fit bounds, invalidateSize, flyTo on genuine selectedId change.
+ * Controller subcomponent to handle LPU campus auto-focus, "Show on Map" building zoom,
+ * and route bounds fitting.
  */
 function MapController({
   waterPoints,
@@ -126,9 +133,9 @@ function MapController({
 }) {
   const map = useMap();
   const initialFitDoneRef = useRef(false);
-  const prevSelectedIdRef = useRef(selectedId || null);
+  const prevSelectedIdRef = useRef(null);
 
-  // Invalidate map size on mount and on window resize to prevent grey tiles
+  // Invalidate map size on mount and on window resize to ensure full tile rendering
   useEffect(() => {
     const timer = setTimeout(() => {
       map.invalidateSize();
@@ -145,39 +152,55 @@ function MapController({
     };
   }, [map]);
 
-  // Initial fit to water points bounds (only runs once upon first valid data)
+  // Initial load: either focus directly on selectedId or fit within LPU campus bounds
   useEffect(() => {
     if (!initialFitDoneRef.current && waterPoints && waterPoints.length > 0) {
-      const validPoints = waterPoints.filter(
-        (wp) => typeof wp.latitude === "number" && typeof wp.longitude === "number"
-      );
-      if (validPoints.length > 1) {
-        const bounds = L.latLngBounds(
-          validPoints.map((wp) => [wp.latitude, wp.longitude])
-        );
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
-        initialFitDoneRef.current = true;
-      } else if (validPoints.length === 1) {
-        // Exactly one water point (e.g. details page): center cleanly
-        map.setView([validPoints[0].latitude, validPoints[0].longitude], 17);
-        initialFitDoneRef.current = true;
+      if (selectedId) {
+        // Direct focus on the selected water point (e.g., clicked "Show on map")
+        const target = waterPoints.find((wp) => wp._id === selectedId);
+        if (target && typeof target.latitude === "number") {
+          map.setView([target.latitude, target.longitude], 18, { animate: false });
+          initialFitDoneRef.current = true;
+          prevSelectedIdRef.current = selectedId;
+          setTimeout(() => {
+            markerRefs.current?.[selectedId]?.openPopup();
+          }, 200);
+          return;
+        }
       }
-    }
-  }, [map, waterPoints]);
 
-  // Fly to selected water point ONLY when selectedId genuinely changes to a new ID
+      // No selectedId: fit ONLY campus water points located at LPU
+      const campusPoints = waterPoints.filter(
+        (wp) =>
+          typeof wp.latitude === "number" &&
+          typeof wp.longitude === "number" &&
+          isLpuCampusPoint(wp.latitude, wp.longitude)
+      );
+
+      if (campusPoints.length > 1) {
+        const bounds = L.latLngBounds(
+          campusPoints.map((wp) => [wp.latitude, wp.longitude])
+        );
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18, minZoom: 16 });
+      } else if (campusPoints.length === 1) {
+        map.setView([campusPoints[0].latitude, campusPoints[0].longitude], 17);
+      } else {
+        // Fallback to LPU center
+        map.setView(LPU_CENTER, 17);
+      }
+      initialFitDoneRef.current = true;
+    }
+  }, [map, waterPoints, selectedId, markerRefs]);
+
+  // Fly to selected water point when selectedId changes afterwards
   useEffect(() => {
     if (selectedId && selectedId !== prevSelectedIdRef.current) {
       prevSelectedIdRef.current = selectedId;
       const target = waterPoints?.find((wp) => wp._id === selectedId);
       if (target && typeof target.latitude === "number") {
-        map.flyTo([target.latitude, target.longitude], 17, { duration: 0.8 });
-        // Open popup after flyTo completes smoothly
+        map.flyTo([target.latitude, target.longitude], 18, { duration: 0.8 });
         const timer = setTimeout(() => {
-          const marker = markerRefs.current?.[selectedId];
-          if (marker) {
-            marker.openPopup();
-          }
+          markerRefs.current?.[selectedId]?.openPopup();
         }, 850);
         return () => clearTimeout(timer);
       }
@@ -186,13 +209,13 @@ function MapController({
     }
   }, [selectedId, waterPoints, map, markerRefs]);
 
-  // Fit bounds to active route ONLY when path coordinates change
+  // Fit bounds to active walking route ONLY when route changes
   const prevRouteRef = useRef(null);
   useEffect(() => {
     if (routePath && routePath.length > 0 && routePath !== prevRouteRef.current) {
       prevRouteRef.current = routePath;
       const bounds = L.latLngBounds(routePath);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18 });
     }
   }, [routePath, map]);
 
@@ -200,7 +223,7 @@ function MapController({
 }
 
 /**
- * Interactive campus drinking water map component.
+ * Interactive Lovely Professional University (LPU) campus drinking water map.
  */
 export default function WaterMap({
   waterPoints = [],
@@ -216,12 +239,19 @@ export default function WaterMap({
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState(null);
   const [locationNotice, setLocationNotice] = useState(null);
+  const [showSteps, setShowSteps] = useState(false);
   const [mapInstance, setMapInstance] = useState(null);
 
   const markerRefs = useRef({});
 
-  // Compute clean initial center
+  // Compute clean initial center (selected point, or single point, or LPU campus center)
   const initialCenter = useMemo(() => {
+    if (selectedId) {
+      const target = waterPoints?.find((wp) => wp._id === selectedId);
+      if (target && typeof target.latitude === "number") {
+        return [target.latitude, target.longitude];
+      }
+    }
     if (
       waterPoints &&
       waterPoints.length === 1 &&
@@ -230,7 +260,7 @@ export default function WaterMap({
       return [waterPoints[0].latitude, waterPoints[0].longitude];
     }
     return LPU_CENTER;
-  }, [waterPoints]);
+  }, [selectedId, waterPoints]);
 
   // Recenter map on user location
   const handleRecenterUser = useCallback(() => {
@@ -240,13 +270,20 @@ export default function WaterMap({
       typeof userPosition.longitude === "number" &&
       mapInstance
     ) {
-      mapInstance.flyTo([userPosition.latitude, userPosition.longitude], 17, {
+      mapInstance.flyTo([userPosition.latitude, userPosition.longitude], 18, {
         duration: 0.8,
       });
     } else if (onRequestLocation) {
       onRequestLocation();
     }
   }, [userPosition, mapInstance, onRequestLocation]);
+
+  // Reset view to LPU campus center
+  const handleResetLpuCampus = useCallback(() => {
+    if (mapInstance) {
+      mapInstance.flyTo(LPU_CENTER, 17, { duration: 0.8 });
+    }
+  }, [mapInstance]);
 
   // Request walking directions to a target water point
   const handleGetDirections = useCallback(
@@ -262,6 +299,7 @@ export default function WaterMap({
       setLocationNotice(null);
       setRouteLoading(true);
       setRouteError(null);
+      setShowSteps(false);
 
       const from = {
         latitude: userPosition.latitude,
@@ -279,16 +317,25 @@ export default function WaterMap({
           path: result.path,
           distanceMeters: result.distanceMeters,
           durationSeconds: result.durationSeconds,
+          steps: result.steps || [],
+          routerSource: result.routerSource,
           isFallback: false,
         });
       } catch (err) {
-        // Fallback: straight line with Haversine distance
+        // Fallback: high-contrast straight line with Haversine distance and compass bearing
         const distance = getDistanceInMeters(
           from.latitude,
           from.longitude,
           to.latitude,
           to.longitude
         );
+        const compass = getCompassDirection(
+          from.latitude,
+          from.longitude,
+          to.latitude,
+          to.longitude
+        );
+
         setActiveRoute({
           destination: wp,
           path: [
@@ -296,12 +343,13 @@ export default function WaterMap({
             [to.latitude, to.longitude],
           ],
           distanceMeters: distance || 0,
-          durationSeconds: null,
+          durationSeconds: Math.round((distance || 0) / 1.3),
+          compass,
           isFallback: true,
           errorMessage: err.message || "Route calculation unavailable.",
         });
         setRouteError(
-          err.message || "Could not calculate walking path. Showing straight line."
+          "Direct walkway unavailable. Showing direct line & compass direction."
         );
       } finally {
         setRouteLoading(false);
@@ -313,6 +361,7 @@ export default function WaterMap({
   const handleClearRoute = () => {
     setActiveRoute(null);
     setRouteError(null);
+    setShowSteps(false);
   };
 
   return (
@@ -328,12 +377,12 @@ export default function WaterMap({
         }
         .water-point-popup .leaflet-popup-content-wrapper {
           border-radius: 12px;
-          box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+          box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1);
           padding: 0;
           overflow: hidden;
         }
         .water-point-popup .leaflet-popup-content {
-          margin: 10px 12px;
+          margin: 10px 14px;
           line-height: 1.4;
         }
       `}</style>
@@ -352,6 +401,16 @@ export default function WaterMap({
           </button>
         )}
 
+        <button
+          type="button"
+          onClick={handleResetLpuCampus}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-blue-700 shadow-md hover:bg-blue-50 active:bg-blue-100 transition-all border border-blue-200 cursor-pointer min-h-[36px]"
+          title="Reset view to Lovely Professional University (LPU) campus"
+        >
+          <span className="text-sm">🏫</span>
+          <span>LPU Campus</span>
+        </button>
+
         {/* Temporary location notice */}
         {locationNotice && !userPosition && (
           <div className="bg-amber-50 text-amber-900 border border-amber-200 text-xs px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5">
@@ -368,15 +427,43 @@ export default function WaterMap({
         )}
       </div>
 
-      {/* Route Info Overlay Card */}
+      {/* Directions Card with Clear Walkway Details & Step Breakdown */}
       {activeRoute && (
-        <div className="absolute bottom-4 left-3 right-3 sm:left-4 sm:right-auto sm:max-w-md z-[1000] bg-white rounded-xl shadow-xl border border-gray-200 p-3.5 space-y-2 animate-in fade-in slide-in-from-bottom-2">
-          <div className="flex items-start justify-between gap-2">
+        <div className="absolute bottom-4 left-3 right-3 sm:left-4 sm:right-auto sm:max-w-md z-[1000] bg-white rounded-xl shadow-2xl border border-gray-200 p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2 max-h-[70vh] overflow-y-auto">
+          <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-2">
             <div>
-              <p className="text-xs text-gray-500 font-medium">Directions to</p>
-              <h4 className="text-sm font-bold text-gray-900">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 uppercase tracking-wide">
+                <span>🚶 Walking Route</span>
+                {activeRoute.isFallback ? (
+                  <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px]">
+                    Direct Heading
+                  </span>
+                ) : (
+                  <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[10px]">
+                    Campus Walkway
+                  </span>
+                )}
+              </div>
+              <h4 className="text-sm font-bold text-gray-900 mt-0.5">
                 {activeRoute.destination.name}
               </h4>
+              {(activeRoute.destination.building ||
+                activeRoute.destination.floor ||
+                activeRoute.destination.landmark) && (
+                <p className="text-[11px] text-gray-500 font-medium">
+                  {[
+                    activeRoute.destination.building,
+                    activeRoute.destination.floor
+                      ? `Floor ${activeRoute.destination.floor}`
+                      : null,
+                    activeRoute.destination.landmark
+                      ? `Near ${activeRoute.destination.landmark}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </p>
+              )}
             </div>
             <button
               type="button"
@@ -388,55 +475,103 @@ export default function WaterMap({
             </button>
           </div>
 
-          <div className="flex items-center gap-3 text-xs">
-            <div className="flex items-center gap-1 font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md">
-              <span>🚶</span>
-              <span>{formatDistance(activeRoute.distanceMeters)}</span>
-            </div>
-            {activeRoute.durationSeconds != null && (
-              <div className="flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md">
-                <span>⏱️</span>
-                <span>{formatDuration(activeRoute.durationSeconds)}</span>
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-100 rounded-lg">
+              <span className="text-base">📏</span>
+              <div>
+                <span className="text-[10px] text-blue-600 font-medium block">
+                  Distance
+                </span>
+                <span className="font-bold text-blue-900 text-sm">
+                  {formatDistance(activeRoute.distanceMeters)}
+                </span>
               </div>
-            )}
-            {activeRoute.isFallback && (
-              <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                Straight line
-              </span>
-            )}
+            </div>
+
+            <div className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-100 rounded-lg">
+              <span className="text-base">⏱️</span>
+              <div>
+                <span className="text-[10px] text-emerald-600 font-medium block">
+                  Est. Walk Time
+                </span>
+                <span className="font-bold text-emerald-900 text-sm">
+                  {formatDuration(activeRoute.durationSeconds)}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {activeRoute.isFallback && routeError && (
-            <p className="text-[11px] text-gray-500 leading-snug">
-              Note: Walking path unavailable. Showing straight line. You can also open Google Maps below.
-            </p>
+          {/* Fallback Compass Heading Helper */}
+          {activeRoute.isFallback && activeRoute.compass && (
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-center gap-2">
+              <span className="text-base">🧭</span>
+              <div>
+                <p className="font-semibold">
+                  Head {activeRoute.compass.cardinal} ({activeRoute.compass.bearing}&deg;)
+                </p>
+                <p className="text-[11px] text-amber-800">
+                  Follow direct bearing across campus to reach dispenser.
+                </p>
+              </div>
+            </div>
           )}
 
-          <div className="pt-1 flex items-center justify-between gap-2">
+          {/* Turn-by-Turn Steps Toggle */}
+          {activeRoute.steps && activeRoute.steps.length > 0 && (
+            <div className="border border-gray-100 rounded-lg p-2.5 bg-gray-50 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowSteps(!showSteps)}
+                className="w-full flex items-center justify-between text-gray-700 font-semibold hover:text-blue-600"
+              >
+                <span>📍 Campus Steps ({activeRoute.steps.length})</span>
+                <span>{showSteps ? "▲" : "▼"}</span>
+              </button>
+
+              {showSteps && (
+                <ol className="mt-2 space-y-1.5 pl-4 list-decimal text-gray-600 border-t border-gray-200 pt-2 text-[11px]">
+                  {activeRoute.steps.map((step, idx) => (
+                    <li key={idx} className="leading-tight">
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )}
+
+          {/* Action Links */}
+          <div className="pt-1 flex items-center gap-2">
             <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${activeRoute.destination.latitude},${activeRoute.destination.longitude}&travelmode=walking`}
+              href={`https://www.google.com/maps/dir/?api=1&origin=${userPosition?.latitude},${userPosition?.longitude}&destination=${activeRoute.destination.latitude},${activeRoute.destination.longitude}&travelmode=walking`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg shadow-sm transition-all"
             >
-              <span>🗺️ Open in Google Maps</span>
+              <span>🗺️ Turn-by-Turn in Google Maps</span>
               <span className="text-[10px]">&rarr;</span>
             </a>
+
             <button
               type="button"
               onClick={handleClearRoute}
-              className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 cursor-pointer"
+              className="px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-100 cursor-pointer"
             >
-              Clear Route
+              Clear
             </button>
           </div>
         </div>
       )}
 
-      {/* Leaflet Map Container */}
+      {/* Leaflet Map Container Locked to Lovely Professional University */}
       <MapContainer
         center={initialCenter}
-        zoom={DEFAULT_ZOOM}
+        zoom={17}
+        minZoom={15}
+        maxZoom={19}
+        maxBounds={LPU_CAMPUS_BOUNDS}
+        maxBoundsViscosity={1.0}
         scrollWheelZoom={true}
         className="w-full h-full z-0"
         ref={setMapInstance}
@@ -592,7 +727,7 @@ export default function WaterMap({
                     </div>
 
                     <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${wp.latitude},${wp.longitude}&travelmode=walking`}
+                      href={`https://www.google.com/maps/dir/?api=1&origin=${userPosition?.latitude || ""}&destination=${wp.latitude},${wp.longitude}&travelmode=walking`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-[11px] text-gray-500 hover:text-blue-600 flex items-center justify-center gap-1 pt-0.5 hover:underline"
@@ -637,16 +772,33 @@ export default function WaterMap({
             </>
           )}
 
-        {/* Directions Walking Route Polyline */}
+        {/* Directions Walking Route Polylines: High-contrast white casing + vibrant blue core */}
         {activeRoute?.path && (
-          <Polyline
-            positions={activeRoute.path}
-            pathOptions={
-              activeRoute.isFallback
-                ? fallbackRoutePolylineOptions
-                : routePolylineOptions
-            }
-          />
+          <>
+            {/* White outer border casing */}
+            <Polyline
+              positions={activeRoute.path}
+              pathOptions={{
+                color: "#FFFFFF",
+                weight: 9,
+                opacity: 0.95,
+                lineCap: "round",
+                lineJoin: "round",
+              }}
+            />
+            {/* Inner vibrant line */}
+            <Polyline
+              positions={activeRoute.path}
+              pathOptions={{
+                color: "#2563EB",
+                weight: 5,
+                opacity: 1.0,
+                lineCap: "round",
+                lineJoin: "round",
+                dashArray: activeRoute.isFallback ? "8, 8" : undefined,
+              }}
+            />
+          </>
         )}
       </MapContainer>
     </div>
