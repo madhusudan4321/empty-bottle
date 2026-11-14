@@ -22,8 +22,11 @@ const LPU_CENTER = [31.2536, 75.7037];
 const DEFAULT_ZOOM = 16;
 
 /**
- * Creates custom SVG droplet marker icon based on availability and selection state.
+ * Cache for L.divIcon instances so React-Leaflet does not call marker.setIcon()
+ * and rebuild the marker DOM on every re-render.
  */
+const iconCache = new Map();
+
 function createWaterPointIcon(availability, isSelected) {
   const color =
     availability === "available"
@@ -32,7 +35,7 @@ function createWaterPointIcon(availability, isSelected) {
       ? "#EF4444" // red
       : "#F59E0B"; // amber (maintenance)
 
-  const size = isSelected ? 40 : 30;
+  const size = isSelected ? 38 : 28;
   const strokeColor = isSelected ? "#1E3A8A" : "#FFFFFF";
   const strokeWidth = isSelected ? 3 : 2;
 
@@ -55,28 +58,64 @@ function createWaterPointIcon(availability, isSelected) {
   });
 }
 
-/**
- * Creates a pulsing blue dot icon for the user's current location.
- */
-function createUserLocationIcon() {
-  const html = `
-    <div style="position:relative; width:22px; height:22px; display:flex; align-items:center; justify-content:center;">
-      <div style="position:absolute; width:22px; height:22px; border-radius:50%; background-color:#3B82F6; opacity:0.35; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-      <div style="width:14px; height:14px; border-radius:50%; background-color:#2563EB; border:2.5px solid #FFFFFF; box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>
-    </div>
-  `;
-
-  return L.divIcon({
-    className: "user-location-custom-icon",
-    html,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
-    popupAnchor: [0, -11],
-  });
+function getWaterPointIcon(availability, isSelected) {
+  const key = `${availability || "available"}_${isSelected ? "1" : "0"}`;
+  if (!iconCache.has(key)) {
+    iconCache.set(key, createWaterPointIcon(availability, isSelected));
+  }
+  return iconCache.get(key);
 }
 
+let cachedUserIcon = null;
+function getUserLocationIcon() {
+  if (!cachedUserIcon) {
+    const html = `
+      <div style="position:relative; width:22px; height:22px; display:flex; align-items:center; justify-content:center;">
+        <div style="position:absolute; width:22px; height:22px; border-radius:50%; background-color:#3B82F6; opacity:0.35; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+        <div style="width:14px; height:14px; border-radius:50%; background-color:#2563EB; border:2.5px solid #FFFFFF; box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>
+      </div>
+    `;
+    cachedUserIcon = L.divIcon({
+      className: "user-location-custom-icon",
+      html,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+      popupAnchor: [0, -11],
+    });
+  }
+  return cachedUserIcon;
+}
+
+// Stable style caches for vector layers
+const crowdZoneStyleCache = {
+  LOW: { color: "#10B981", fillColor: "#10B981", fillOpacity: 0.15, weight: 1.5, dashArray: "3, 3" },
+  MODERATE: { color: "#F59E0B", fillColor: "#F59E0B", fillOpacity: 0.15, weight: 1.5, dashArray: "3, 3" },
+  HIGH: { color: "#EF4444", fillColor: "#EF4444", fillOpacity: 0.15, weight: 1.5, dashArray: "3, 3" },
+  UNKNOWN: { color: "#9CA3AF", fillColor: "#9CA3AF", fillOpacity: 0.15, weight: 1.5, dashArray: "3, 3" },
+};
+
+const userAccuracyPathOptions = {
+  color: "#3B82F6",
+  fillColor: "#3B82F6",
+  fillOpacity: 0.12,
+  weight: 1,
+};
+
+const routePolylineOptions = {
+  color: "#2563EB",
+  weight: 5,
+  opacity: 0.85,
+};
+
+const fallbackRoutePolylineOptions = {
+  color: "#2563EB",
+  weight: 5,
+  opacity: 0.85,
+  dashArray: "8, 8",
+};
+
 /**
- * Controller subcomponent to handle auto-fit bounds, invalidateSize, flyTo on selectedId, and route bounds.
+ * Controller subcomponent to handle auto-fit bounds, invalidateSize, flyTo on genuine selectedId change.
  */
 function MapController({
   waterPoints,
@@ -87,6 +126,7 @@ function MapController({
 }) {
   const map = useMap();
   const initialFitDoneRef = useRef(false);
+  const prevSelectedIdRef = useRef(selectedId || null);
 
   // Invalidate map size on mount and on window resize to prevent grey tiles
   useEffect(() => {
@@ -105,41 +145,54 @@ function MapController({
     };
   }, [map]);
 
-  // Initial fit to water points bounds
+  // Initial fit to water points bounds (only runs once upon first valid data)
   useEffect(() => {
     if (!initialFitDoneRef.current && waterPoints && waterPoints.length > 0) {
       const validPoints = waterPoints.filter(
         (wp) => typeof wp.latitude === "number" && typeof wp.longitude === "number"
       );
-      if (validPoints.length > 0) {
+      if (validPoints.length > 1) {
         const bounds = L.latLngBounds(
           validPoints.map((wp) => [wp.latitude, wp.longitude])
         );
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
         initialFitDoneRef.current = true;
+      } else if (validPoints.length === 1) {
+        // Exactly one water point (e.g. details page): center cleanly
+        map.setView([validPoints[0].latitude, validPoints[0].longitude], 17);
+        initialFitDoneRef.current = true;
       }
     }
   }, [map, waterPoints]);
 
-  // Fly to selected water point if selectedId changes
+  // Fly to selected water point ONLY when selectedId genuinely changes to a new ID
   useEffect(() => {
-    if (selectedId && waterPoints) {
-      const target = waterPoints.find((wp) => wp._id === selectedId);
+    if (selectedId && selectedId !== prevSelectedIdRef.current) {
+      prevSelectedIdRef.current = selectedId;
+      const target = waterPoints?.find((wp) => wp._id === selectedId);
       if (target && typeof target.latitude === "number") {
         map.flyTo([target.latitude, target.longitude], 17, { duration: 0.8 });
-        const marker = markerRefs.current?.[selectedId];
-        if (marker) {
-          marker.openPopup();
-        }
+        // Open popup after flyTo completes smoothly
+        const timer = setTimeout(() => {
+          const marker = markerRefs.current?.[selectedId];
+          if (marker) {
+            marker.openPopup();
+          }
+        }, 850);
+        return () => clearTimeout(timer);
       }
+    } else if (!selectedId) {
+      prevSelectedIdRef.current = null;
     }
   }, [selectedId, waterPoints, map, markerRefs]);
 
-  // Fit bounds to active route
+  // Fit bounds to active route ONLY when path coordinates change
+  const prevRouteRef = useRef(null);
   useEffect(() => {
-    if (routePath && routePath.length > 0) {
+    if (routePath && routePath.length > 0 && routePath !== prevRouteRef.current) {
+      prevRouteRef.current = routePath;
       const bounds = L.latLngBounds(routePath);
-      map.fitBounds(bounds, { padding: [60, 60] });
+      map.fitBounds(bounds, { padding: [50, 50] });
     }
   }, [routePath, map]);
 
@@ -166,6 +219,18 @@ export default function WaterMap({
   const [mapInstance, setMapInstance] = useState(null);
 
   const markerRefs = useRef({});
+
+  // Compute clean initial center
+  const initialCenter = useMemo(() => {
+    if (
+      waterPoints &&
+      waterPoints.length === 1 &&
+      typeof waterPoints[0].latitude === "number"
+    ) {
+      return [waterPoints[0].latitude, waterPoints[0].longitude];
+    }
+    return LPU_CENTER;
+  }, [waterPoints]);
 
   // Recenter map on user location
   const handleRecenterUser = useCallback(() => {
@@ -250,25 +315,29 @@ export default function WaterMap({
     setRouteError(null);
   };
 
-  // Helper to determine circle color based on crowd level
-  const getCrowdZoneStyle = (level) => {
-    switch (level) {
-      case "LOW":
-        return { color: "#10B981", fillColor: "#10B981" };
-      case "MODERATE":
-        return { color: "#F59E0B", fillColor: "#F59E0B" };
-      case "HIGH":
-        return { color: "#EF4444", fillColor: "#EF4444" };
-      default:
-        return { color: "#9CA3AF", fillColor: "#9CA3AF" };
-    }
-  };
-
   return (
     <div
       className="relative w-full rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-gray-50 flex flex-col"
       style={{ height }}
     >
+      {/* Global CSS overrides for Leaflet markers and popups */}
+      <style>{`
+        .water-point-custom-icon, .user-location-custom-icon {
+          background: transparent !important;
+          border: none !important;
+        }
+        .water-point-popup .leaflet-popup-content-wrapper {
+          border-radius: 12px;
+          box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+          padding: 0;
+          overflow: hidden;
+        }
+        .water-point-popup .leaflet-popup-content {
+          margin: 10px 12px;
+          line-height: 1.4;
+        }
+      `}</style>
+
       {/* Top Floating Controls Bar */}
       <div className="absolute top-3 left-3 z-[1000] flex flex-wrap items-center gap-2 max-w-[calc(100%-60px)]">
         {onRequestLocation && (
@@ -366,7 +435,7 @@ export default function WaterMap({
 
       {/* Leaflet Map Container */}
       <MapContainer
-        center={LPU_CENTER}
+        center={initialCenter}
         zoom={DEFAULT_ZOOM}
         scrollWheelZoom={true}
         className="w-full h-full z-0"
@@ -408,20 +477,15 @@ export default function WaterMap({
               typeof wp.crowdRadius === "number" && wp.crowdRadius > 0
                 ? wp.crowdRadius
                 : 30;
-            const { color, fillColor } = getCrowdZoneStyle(crowd?.level);
+            const style =
+              crowdZoneStyleCache[crowd?.level] || crowdZoneStyleCache.UNKNOWN;
 
             return (
               <Circle
                 key={`circle-${wp._id}`}
                 center={[wp.latitude, wp.longitude]}
                 radius={radius}
-                pathOptions={{
-                  color,
-                  fillColor,
-                  fillOpacity: 0.15,
-                  weight: 1.5,
-                  dashArray: "3, 3",
-                }}
+                pathOptions={style}
               />
             );
           })}
@@ -433,7 +497,7 @@ export default function WaterMap({
 
           const isSelected = wp._id === selectedId;
           const crowd = crowdById?.[wp._id];
-          const icon = createWaterPointIcon(wp.availability, isSelected);
+          const icon = getWaterPointIcon(wp.availability, isSelected);
 
           const locationText = [
             wp.building,
@@ -463,8 +527,8 @@ export default function WaterMap({
                 },
               }}
             >
-              <Popup className="water-point-popup">
-                <div className="p-1 max-w-[260px] space-y-2">
+              <Popup className="water-point-popup" autoPanPadding={[12, 12]}>
+                <div className="p-1 max-w-[240px] space-y-2">
                   <div>
                     <h3 className="font-bold text-gray-900 text-sm leading-snug">
                       {wp.name}
@@ -552,19 +616,14 @@ export default function WaterMap({
                   <Circle
                     center={[userPosition.latitude, userPosition.longitude]}
                     radius={userPosition.accuracy}
-                    pathOptions={{
-                      color: "#3B82F6",
-                      fillColor: "#3B82F6",
-                      fillOpacity: 0.12,
-                      weight: 1,
-                    }}
+                    pathOptions={userAccuracyPathOptions}
                   />
                 )}
               <Marker
                 position={[userPosition.latitude, userPosition.longitude]}
-                icon={createUserLocationIcon()}
+                icon={getUserLocationIcon()}
               >
-                <Popup>
+                <Popup autoPanPadding={[12, 12]}>
                   <div className="text-xs text-gray-800 font-medium">
                     📍 <strong>Your Current Location</strong>
                     {userPosition.accuracy != null && (
@@ -582,12 +641,11 @@ export default function WaterMap({
         {activeRoute?.path && (
           <Polyline
             positions={activeRoute.path}
-            pathOptions={{
-              color: "#2563EB",
-              weight: 5,
-              opacity: 0.85,
-              dashArray: activeRoute.isFallback ? "8, 8" : undefined,
-            }}
+            pathOptions={
+              activeRoute.isFallback
+                ? fallbackRoutePolylineOptions
+                : routePolylineOptions
+            }
           />
         )}
       </MapContainer>

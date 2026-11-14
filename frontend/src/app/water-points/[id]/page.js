@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -59,6 +59,11 @@ function WaterPointDetailContent({ userPosition = null }) {
   const [waterPoint, setWaterPoint] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const mapWaterPoints = useMemo(
+    () => (waterPoint ? [waterPoint] : []),
+    [waterPoint]
+  );
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -342,7 +347,7 @@ function WaterPointDetailContent({ userPosition = null }) {
               </CardHeader>
               <CardContent className="p-0">
                 <WaterMapClient
-                  waterPoints={[waterPoint]}
+                  waterPoints={mapWaterPoints}
                   crowdById={crowdById}
                   selectedId={waterPoint._id}
                   userPosition={effectivePosition}
