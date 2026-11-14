@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/Badge";
 import { useAuth } from "@/context/AuthContext";
 import { useCrowd } from "@/hooks/useCrowd";
+import { useMyLocation } from "@/hooks/useMyLocation";
+import WaterMapClient from "@/components/map/WaterMapClient";
 import ShareLocationToggle from "@/components/crowd/ShareLocationToggle";
 import { apiFetch } from "@/lib/api";
 import { ISSUE_TYPE_LABELS } from "@/lib/constants";
@@ -30,6 +32,13 @@ import {
 function DashboardContent({ userPosition = null }) {
   const { user } = useAuth();
   const { crowdById } = useCrowd();
+  const {
+    position: myPosition,
+    request: onRequestLocation,
+  } = useMyLocation();
+
+  const effectivePosition = myPosition || userPosition;
+
   const [waterPoints, setWaterPoints] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,19 +69,19 @@ function DashboardContent({ userPosition = null }) {
     fetchData();
   };
 
-  // Points to display: when userPosition exists, sort nearest first; otherwise take first 3 available ones sorted by name
+  // Points to display: when effectivePosition exists, sort nearest first; otherwise take first 3 available ones sorted by name
   const displayPoints = useMemo(() => {
     if (
-      userPosition &&
-      typeof userPosition.latitude === "number" &&
-      typeof userPosition.longitude === "number"
+      effectivePosition &&
+      typeof effectivePosition.latitude === "number" &&
+      typeof effectivePosition.longitude === "number"
     ) {
       return [...waterPoints]
         .map((wp) => ({
           ...wp,
           distance: getDistanceInMeters(
-            userPosition.latitude,
-            userPosition.longitude,
+            effectivePosition.latitude,
+            effectivePosition.longitude,
             wp.latitude,
             wp.longitude
           ),
@@ -87,7 +96,7 @@ function DashboardContent({ userPosition = null }) {
     return [...pool]
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
       .slice(0, 3);
-  }, [waterPoints, userPosition]);
+  }, [waterPoints, effectivePosition]);
 
   const recentReports = reports.slice(0, 2);
 
@@ -192,9 +201,37 @@ function DashboardContent({ userPosition = null }) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Water Points Summary */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center justify-between">
+            {/* Campus Map Preview Card */}
+            <Card className="overflow-hidden shadow-sm hover:border-gray-300 transition-all">
+              <div className="p-3 sm:p-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base sm:text-lg">🗺️</span>
+                  <h3 className="font-bold text-gray-900 text-sm">
+                    Interactive Campus Map
+                  </h3>
+                </div>
+                <Link
+                  href="/water-points?view=map"
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                >
+                  <span>Open full map</span>
+                  <span>&rarr;</span>
+                </Link>
+              </div>
+              <CardContent className="p-0">
+                <WaterMapClient
+                  waterPoints={waterPoints}
+                  crowdById={crowdById}
+                  userPosition={effectivePosition}
+                  onRequestLocation={onRequestLocation}
+                  height="35vh"
+                />
+              </CardContent>
+            </Card>
+
+            <div className="flex items-center justify-between pt-2">
               <h2 className="text-lg font-bold text-gray-900">
-                {userPosition ? "Nearest Water Points" : "Water points"}
+                {effectivePosition ? "Nearest Water Points" : "Water points"}
               </h2>
               <Link
                 href="/water-points"
